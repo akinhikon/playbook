@@ -1,6 +1,4 @@
-# Let's inspect and construct a 100% bug-free single HTML file.
-
-html_code = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -25,9 +23,6 @@ html_code = r"""<!DOCTYPE html>
   <script type="text/babel">
     const { useState, useMemo, useCallback, useEffect, useRef, createContext, useContext } = React;
 
-    // ============================================================
-    // SVG Icons
-    // ============================================================
     const SvgIcon = ({ children, size = 16, className = "", style = {} }) => (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -74,9 +69,6 @@ html_code = r"""<!DOCTYPE html>
     const Undo2 = (p) => <SvgIcon {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></SvgIcon>;
     const Camera = (p) => <SvgIcon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></SvgIcon>;
 
-    // ----------------------------------------------------
-    // Design Tokens & Helpers
-    // ----------------------------------------------------
     const C = {
       bg: "#EBE7DC",
       surface: "#F7F4EC",
@@ -142,9 +134,6 @@ html_code = r"""<!DOCTYPE html>
     const EVENT_TYPE_LABEL = { workday: "現場作業", meeting: "打ち合わせ", travel: "出張" };
     const PROJECT_COLORS = ["#3B5B8C", "#7A4FA0", "#B4653F", "#4A7A6E", "#8A5A3E"];
 
-    // ----------------------------------------------------
-    // Calculations
-    // ----------------------------------------------------
     function lineItemLaborCost(li, laborRates) {
       const rate = (laborRates || []).find((r) => r.id === li.laborRateId);
       return (li.laborHours || 0) * (rate ? rate.hourlyRate : 0);
@@ -379,7 +368,6 @@ html_code = r"""<!DOCTYPE html>
       const getX = (idx) => padLeft + (idx / Math.max(1, days.length - 1)) * plotW;
       const zeroY = getY(0);
 
-      // ステップライン生成
       let pathD = `M ${getX(0)} ${getY(days[0].balance || 0)}`;
       for (let i = 1; i < days.length; i++) {
         const prevX = getX(i - 1);
@@ -398,22 +386,18 @@ html_code = r"""<!DOCTYPE html>
             className="w-full h-56 sm:h-64"
             onMouseLeave={() => setHoverIdx(null)}
           >
-            {/* グリッド線 */}
             <line x1={padLeft} y1={zeroY} x2={width - padRight} y2={zeroY} stroke={C.ink} strokeWidth="1.5" />
             <line x1={padLeft} y1={padTop} x2={width - padRight} y2={padTop} stroke={C.border} strokeDasharray="3 3" />
             <line x1={padLeft} y1={padTop + plotH} x2={width - padRight} y2={padTop + plotH} stroke={C.border} strokeDasharray="3 3" />
 
-            {/* Y軸ラベル */}
             <text x={padLeft - 6} y={padTop + 4} textAnchor="end" fontSize="10" fill={C.inkSoft} className="mono font-bold">{fmtMan(maxVal)}万</text>
             <text x={padLeft - 6} y={zeroY + 3} textAnchor="end" fontSize="10" fill={C.ink} className="mono font-bold">0</text>
             {minVal < 0 && (
               <text x={padLeft - 6} y={padTop + plotH + 4} textAnchor="end" fontSize="10" fill={C.danger} className="mono font-bold">{fmtMan(minVal)}万</text>
             )}
 
-            {/* ステップ折れ線 */}
             <path d={pathD} fill="none" stroke={(days[days.length - 1]?.balance || 0) < 0 ? C.danger : C.safe} strokeWidth="2.5" />
 
-            {/* X軸目盛り */}
             {days.map((d, i) => {
               if (i % Math.floor(days.length / 6) === 0 || i === days.length - 1) {
                 return (
@@ -425,7 +409,6 @@ html_code = r"""<!DOCTYPE html>
               return null;
             })}
 
-            {/* ホバー感知エリア */}
             {days.map((d, i) => {
               const x = getX(i);
               const colW = plotW / days.length;
@@ -443,7 +426,6 @@ html_code = r"""<!DOCTYPE html>
               );
             })}
 
-            {/* ホバーポインター */}
             {hoverIdx !== null && (
               <g>
                 <line x1={getX(hoverIdx)} y1={padTop} x2={getX(hoverIdx)} y2={padTop + plotH} stroke={C.inkSoft} strokeDasharray="2 2" />
@@ -452,7 +434,6 @@ html_code = r"""<!DOCTYPE html>
             )}
           </svg>
 
-          {/* ツールチップ */}
           {activeDay && (
             <div
               className="absolute top-2 pointer-events-none rounded-lg p-2.5 text-xs shadow-md"
@@ -1075,9 +1056,6 @@ html_code = r"""<!DOCTYPE html>
       return issues;
     }
 
-    // ----------------------------------------------------
-    // Simulation hook
-    // ----------------------------------------------------
     function useSimulation(company, projects) {
       return useMemo(() => {
         const days = [];
@@ -1158,9 +1136,6 @@ html_code = r"""<!DOCTYPE html>
       }, [company, projects]);
     }
 
-    // ----------------------------------------------------
-    // App Root
-    // ----------------------------------------------------
     function App() {
       const [loading, setLoading] = useState(true);
       const [saveStatus, setSaveStatus] = useState("idle");
@@ -1378,9 +1353,3 @@ html_code = r"""<!DOCTYPE html>
   </script>
 </body>
 </html>
-"""
-
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html_code)
-
-print("Generated index.html successfully.")
