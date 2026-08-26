@@ -1,6 +1,4 @@
-# Let's write the complete, clean HTML code and check for any syntax errors or bad newlines.
-
-html_content = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -25,9 +23,6 @@ html_content = """<!DOCTYPE html>
   <script type="text/babel">
     const { useState, useMemo, useCallback, useEffect, useRef, createContext, useContext } = React;
 
-    // ============================================================
-    // SVG Icons
-    // ============================================================
     const SvgIcon = ({ children, size = 16, className = "", style = {} }) => (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -74,9 +69,6 @@ html_content = """<!DOCTYPE html>
     const Undo2 = (p) => <SvgIcon {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></SvgIcon>;
     const Camera = (p) => <SvgIcon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></SvgIcon>;
 
-    // ----------------------------------------------------
-    // Design Tokens & Helpers
-    // ----------------------------------------------------
     const C = {
       bg: "#EBE7DC",
       surface: "#F7F4EC",
@@ -142,9 +134,6 @@ html_content = """<!DOCTYPE html>
     const EVENT_TYPE_LABEL = { workday: "現場作業", meeting: "打ち合わせ", travel: "出張" };
     const PROJECT_COLORS = ["#3B5B8C", "#7A4FA0", "#B4653F", "#4A7A6E", "#8A5A3E"];
 
-    // ----------------------------------------------------
-    // Calculations
-    // ----------------------------------------------------
     function lineItemLaborCost(li, laborRates) {
       const rate = (laborRates || []).find((r) => r.id === li.laborRateId);
       return (li.laborHours || 0) * (rate ? rate.hourlyRate : 0);
@@ -172,9 +161,9 @@ html_content = """<!DOCTYPE html>
       return li.qty > 0 ? price / li.qty : price;
     }
 
-    const categoryRevenue = (cat, laborRates) => sum(cat.lineItems || [], (li) => lineItemPrice(li, laborRates));
-    const categoryBudget = (cat, laborRates) => sum(cat.lineItems || [], (li) => lineItemCost(li, laborRates));
-    const categoryActual = (cat) => sum(cat.actualCosts || [], costItemAmount);
+    const categoryRevenue = (cat, laborRates) => sum(cat.lineItems, (li) => lineItemPrice(li, laborRates));
+    const categoryBudget = (cat, laborRates) => sum(cat.lineItems, (li) => lineItemCost(li, laborRates));
+    const categoryActual = (cat) => sum(cat.actualCosts, costItemAmount);
 
     function categoryStats(cat, laborRates) {
       const revenue = categoryRevenue(cat, laborRates);
@@ -1067,9 +1056,6 @@ html_content = """<!DOCTYPE html>
       return issues;
     }
 
-    // ----------------------------------------------------
-    // Simulation hook
-    // ----------------------------------------------------
     function useSimulation(company, projects) {
       return useMemo(() => {
         const days = [];
@@ -1148,100 +1134,6 @@ html_content = """<!DOCTYPE html>
         const firstShortfall = days.find((d) => d.balance < 0);
         return { days, minPoint, firstShortfall };
       }, [company, projects]);
-    }
-
-    // ----------------------------------------------------
-    // Tab Navigation & App Root
-    // ----------------------------------------------------
-    function SettingsTab({ company, updateCompany, projects }) {
-      const materials = company.materials || [];
-      const updateMaterial = (id, patch) => updateCompany({ materials: materials.map((m) => (m.id === id ? patch : m)) });
-      const addMaterial = () => updateCompany({ materials: [...materials, { id: uid(), name: "新しい資材", unit: "式", unitPrice: 0, priceLog: [] }] });
-
-      return (
-        <div className="flex flex-col gap-4">
-          <SectionCard title="基本設定" subtitle="手元資金とシミュレーション期間">
-            <div className="flex gap-3 flex-wrap">
-              <Field label="現在の残高（円）"><Cell type="number" value={company.initialBalance} onChange={(e) => updateCompany({ initialBalance: Number(e.target.value) })} style={{ width: 140 }} /></Field>
-              <Field label="シミュレーション日数"><Cell type="number" value={company.simulationDays} min={30} max={180} onChange={(e) => updateCompany({ simulationDays: Number(e.target.value) })} style={{ width: 100 }} /></Field>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="作業者単価表" subtitle="見積の時給マスター" right={<IconButton onClick={() => updateCompany({ laborRates: [...(company.laborRates || []), { id: uid(), name: "新しい単価", hourlyRate: 0 }] })} title="追加"><Plus size={16} /></IconButton>}>
-            <div className="flex flex-col gap-2">
-              {(company.laborRates || []).map((r) => (
-                <div key={r.id} className="flex gap-2 items-end flex-wrap">
-                  <Field label="名前" grow><Cell value={r.name} onChange={(e) => updateCompany({ laborRates: company.laborRates.map(x => x.id === r.id ? { ...x, name: e.target.value } : x) })} style={{ minWidth: 140 }} /></Field>
-                  <Field label="時給（円/h）"><Cell type="number" value={r.hourlyRate} onChange={(e) => updateCompany({ laborRates: company.laborRates.map(x => x.id === r.id ? { ...x, hourlyRate: Number(e.target.value) } : x) })} /></Field>
-                  <IconButton onClick={() => updateCompany({ laborRates: company.laborRates.filter(x => x.id !== r.id) })} title="削除" danger><Trash2 size={16} /></IconButton>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-
-          <SectionCard
-            title="資材マスター（よく使う材料の単価）"
-            subtitle="コーナンのレシートから自動解析した単価データが登録されています。見積タブで選ぶだけで自動入力されます。"
-            right={
-              <div className="flex gap-2">
-                <button
-                  onClick={() => alert("【レシート読取】\\nGeminiのチャット画面にレシート写真を送ると、最新単価を自動抽出してこのマスターを更新できます。")}
-                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold transition-opacity hover:opacity-80"
-                  style={{ background: C.ink, color: C.surface }}
-                >
-                  <Camera size={14} /> レシート読取
-                </button>
-                <IconButton onClick={addMaterial} title="追加"><Plus size={16} /></IconButton>
-              </div>
-            }
-          >
-            <div className="flex flex-col gap-2">
-              {materials.map((m) => (
-                <MaterialMasterRow key={m.id} m={m} onChange={(v) => updateMaterial(m.id, v)} onRemove={() => updateCompany({ materials: materials.filter(x => x.id !== m.id) })} />
-              ))}
-            </div>
-          </SectionCard>
-
-          <SectionCard title="決済手段（クレカ・チャージ式）" subtitle="支払いサイクルの自動計算" right={<IconButton onClick={() => updateCompany({ paymentMethods: [...(company.paymentMethods || []), { id: uid(), name: "新しい決済手段", type: "transfer" }] })} title="追加"><Plus size={16} /></IconButton>}>
-            <div className="flex flex-col gap-3">
-              {(company.paymentMethods || []).map((m) => (
-                <PaymentMethodCard key={m.id} method={m} projects={projects} onChange={(v) => updateCompany({ paymentMethods: company.paymentMethods.map(x => x.id === m.id ? v : x) })} onRemove={() => updateCompany({ paymentMethods: company.paymentMethods.filter(x => x.id !== m.id) })} />
-              ))}
-            </div>
-          </SectionCard>
-        </div>
-      );
-    }
-
-    const TABS = [
-      { id: "quote", label: "見積・原価", icon: FileText },
-      { id: "payment", label: "支払いスケジュール", icon: Receipt },
-      { id: "cashflow", label: "資金繰りシミュレーター", icon: Activity },
-      { id: "analytics", label: "実績分析", icon: BarChart3 },
-      { id: "calendar", label: "カレンダー", icon: Calendar },
-      { id: "settings", label: "設定", icon: Settings },
-    ];
-
-    function TabNav({ active, onChange }) {
-      return (
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: C.surfaceAlt, border: `1px solid ${C.border}` }}>
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const isActive = t.id === active;
-            return (
-              <button
-                key={t.id}
-                onClick={() => onChange(t.id)}
-                className="flex-1 flex items-center justify-center gap-1.5 text-xs sm:text-sm font-bold py-2 rounded-lg transition-colors"
-                style={{ background: isActive ? C.ink : "transparent", color: isActive ? C.surface : C.inkSoft }}
-              >
-                <Icon size={14} />
-                <span className="hidden sm:inline">{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      );
     }
 
     function App() {
@@ -1461,10 +1353,3 @@ html_content = """<!DOCTYPE html>
   </script>
 </body>
 </html>
-"""
-
-# Let's verify that the script contains no syntax errors
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html_content)
-
-print("Validated and saved index.html successfully.")
