@@ -1066,6 +1066,118 @@
     }
 
     // ----------------------------------------------------
+    // UI Atoms
+    // ----------------------------------------------------
+    const inputBase = "w-full rounded-md px-2 py-1.5 text-sm outline-none";
+    const inputStyle = { background: C.surface, border: `1px solid ${C.border}`, color: C.ink };
+
+    function NumberCell({ value, onChange, small, style, ...rest }) {
+      const display = (v) => (v === 0 || v == null || v === "" ? "" : String(v));
+      const [text, setText] = useState(display(value));
+      const focusedRef = useRef(false);
+
+      useEffect(() => {
+        if (!focusedRef.current) setText(display(value));
+      }, [value]);
+
+      return (
+        <input
+          {...rest}
+          type="text"
+          inputMode="decimal"
+          placeholder="0"
+          value={text}
+          onFocus={(e) => {
+            focusedRef.current = true;
+            e.target.select();
+          }}
+          onBlur={() => {
+            focusedRef.current = false;
+            setText(display(value));
+          }}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+            setText(raw);
+            onChange(e);
+          }}
+          className={small ? "w-full rounded-md px-2 py-1 text-xs outline-none" : inputBase}
+          style={{ ...inputStyle, ...style }}
+        />
+      );
+    }
+    function Cell(props) {
+      if (props.type === "number") return <NumberCell {...props} />;
+      return <input {...props} className={props.small ? "w-full rounded-md px-2 py-1 text-xs outline-none" : inputBase} style={{ ...inputStyle, ...props.style }} />;
+    }
+    function Select({ value, onChange, options = COST_TYPES }) {
+      return (
+        <select value={value} onChange={onChange} className="rounded-md px-1.5 py-1 text-xs outline-none" style={inputStyle}>
+          {options.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      );
+    }
+    function IconButton({ onClick, title, danger, children }) {
+      return (
+        <button
+          onClick={onClick}
+          title={title}
+          className="shrink-0 flex items-center justify-center rounded-md p-1.5 transition-transform active:scale-95"
+          style={{ background: danger ? C.dangerSoft : C.surfaceAlt, color: danger ? C.danger : C.inkSoft }}
+        >
+          {children}
+        </button>
+      );
+    }
+    function Field({ label, children, grow }) {
+      return (
+        <label className={`flex flex-col gap-1 ${grow ? "flex-1" : "flex-none"}`}>
+          <span className="text-xs" style={{ color: C.inkSoft }}>{label}</span>
+          {children}
+        </label>
+      );
+    }
+    function MarginArrow({ est, act }) {
+      const diff = act - est;
+      if (Math.abs(diff) < 0.005) return <Minus size={13} style={{ color: C.inkSoft }} />;
+      if (diff < 0) return <TrendingDown size={13} style={{ color: C.danger }} />;
+      return <TrendingUp size={13} style={{ color: C.safe }} />;
+    }
+    function StatBox({ label, value, color }) {
+      return (
+        <div className="rounded-lg px-2.5 py-2" style={{ background: C.surfaceAlt }}>
+          <div className="text-[10px]" style={{ color: C.inkSoft }}>{label}</div>
+          <div className="mono text-sm font-bold" style={{ color: color || C.ink }}>{value}</div>
+        </div>
+      );
+    }
+    function HeroBox({ label, value, sub, color }) {
+      return (
+        <div className="rounded-xl p-3 sm:p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="text-xs" style={{ color: C.inkSoft }}>{label}</div>
+          <div className="mono text-sm sm:text-lg font-bold mt-1" style={{ color: color || C.ink }}>{value}</div>
+          {sub && <div className="text-[11px] mt-0.5" style={{ color: C.inkSoft }}>{sub}</div>}
+        </div>
+      );
+    }
+    function SectionCard({ title, subtitle, right, children }) {
+      return (
+        <div className="rounded-xl p-4 sm:p-5" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold tracking-wide" style={{ color: C.ink, fontFamily: "'Zen Kaku Gothic New', sans-serif" }}>{title}</h2>
+              {subtitle && <p className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{subtitle}</p>}
+            </div>
+            {right}
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    // ----------------------------------------------------
     // Simulation hook
     // ----------------------------------------------------
     function useSimulation(company, projects) {
@@ -1149,8 +1261,1214 @@
     }
 
     // ----------------------------------------------------
-    // Tab Navigation & App Root
+    // TAB COMPONENTS
     // ----------------------------------------------------
+    function LineItemCard({ li, laborRates, materials, onChange, onRemove, open, onToggle }) {
+      const triggerUndo = useUndoTrigger();
+      const laborCost = lineItemLaborCost(li, laborRates);
+      const materialCost = lineItemMaterialCost(li);
+      const cost = lineItemCost(li, laborRates);
+      const price = lineItemPrice(li, laborRates);
+      const unitPrice = lineItemUnitPrice(li, laborRates);
+      const materialItems = li.materialItems || [];
+      const tools = li.tools || [];
+      const [toolInput, setToolInput] = useState("");
+
+      const updateMaterial = (id, patch) => onChange({ ...li, materialItems: materialItems.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
+      const addMaterial = () => onChange({ ...li, materialItems: [...materialItems, { id: uid(), label: "", qty: 1, unitPrice: 0 }] });
+      const addMaterialFromMaster = (materialId) => {
+        const master = (materials || []).find((mm) => mm.id === materialId);
+        if (!master) return;
+        onChange({ ...li, materialItems: [...materialItems, { id: uid(), label: master.name, qty: 1, unitPrice: master.unitPrice || 0 }] });
+      };
+      const removeMaterial = (id) => {
+        const idx = materialItems.findIndex((m) => m.id === id);
+        const item = materialItems[idx];
+        if (!item) return;
+        const remaining = materialItems.filter((m) => m.id !== id);
+        onChange({ ...li, materialItems: remaining });
+        triggerUndo(`「${item.label || "材料"}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange({ ...li, materialItems: restored });
+        });
+      };
+
+      const addTool = () => {
+        const name = toolInput.trim();
+        if (!name) return;
+        onChange({ ...li, tools: [...tools, { id: uid(), name }] });
+        setToolInput("");
+      };
+      const removeTool = (id) => onChange({ ...li, tools: tools.filter((t) => t.id !== id) });
+
+      return (
+        <div className="rounded-lg overflow-hidden" style={{ background: C.surfaceAlt, border: `1px dashed ${C.border}` }}>
+          <button onClick={onToggle} className="w-full flex items-center gap-2 px-3 py-2 text-left">
+            {open ? <ChevronDown size={14} style={{ color: C.inkSoft }} /> : <ChevronRight size={14} style={{ color: C.inkSoft }} />}
+            <span className="text-sm font-bold flex-1 truncate" style={{ color: C.ink }}>{li.name || "（項目名未入力）"}</span>
+            <span className="text-[11px] shrink-0" style={{ color: C.inkSoft }}>{li.qty}{li.unit}</span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: li.ordered ? C.safeSoft : C.amberSoft, color: li.ordered ? C.safe : C.amber }}>
+              {li.ordered ? "発注済み" : "未発注"}
+            </span>
+            <span className="text-sm font-bold shrink-0 mono" style={{ color: C.safe, minWidth: 90, textAlign: "right" }}>{fmtYen(price)}</span>
+          </button>
+
+          {open && (
+            <div className="px-3 pb-3" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="pt-3">
+                <Field label="項目名">
+                  <Cell value={li.name} onChange={(e) => onChange({ ...li, name: e.target.value })} style={{ width: "100%", fontWeight: 700 }} />
+                </Field>
+
+                <div className="flex gap-2 items-end flex-wrap mt-2 mb-2">
+                  <Field label="数量"><Cell type="number" value={li.qty} onChange={(e) => onChange({ ...li, qty: Number(e.target.value) })} style={{ width: 70 }} /></Field>
+                  <Field label="単位"><Cell value={li.unit} onChange={(e) => onChange({ ...li, unit: e.target.value })} style={{ width: 60 }} /></Field>
+                  <button
+                    onClick={() => onChange({ ...li, ordered: !li.ordered })}
+                    className="text-[11px] font-bold px-2 py-1.5 rounded-md shrink-0"
+                    style={{ background: li.ordered ? C.safeSoft : C.amberSoft, color: li.ordered ? C.safe : C.amber }}
+                  >
+                    {li.ordered ? "発注済み" : "未発注"}
+                  </button>
+                  <IconButton onClick={onRemove} title="削除" danger><Trash2 size={15} /></IconButton>
+                </div>
+
+                <div className="mb-2">
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
+                    <span className="text-xs font-bold" style={{ color: C.inkSoft }}>材料費（内訳）</span>
+                    <div className="flex items-center gap-2">
+                      {materials && materials.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) addMaterialFromMaster(e.target.value);
+                            e.target.value = "";
+                          }}
+                          className="rounded-md px-1.5 py-1 text-[11px] outline-none"
+                          style={{ ...inputStyle, maxWidth: 170 }}
+                        >
+                          <option value="">資材マスターから追加</option>
+                          {materials.map((mm) => (
+                            <option key={mm.id} value={mm.id}>{mm.name}（¥{(mm.unitPrice || 0).toLocaleString()}/{mm.unit || "個"}）</option>
+                          ))}
+                        </select>
+                      )}
+                      <button onClick={addMaterial} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}>
+                        <Plus size={12} /> 追加
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {materialItems.map((m) => {
+                      const qty = m.qty ?? 1;
+                      const unitPrice = m.unitPrice ?? m.amount ?? 0;
+                      return (
+                        <div key={m.id} className="flex gap-1.5 items-center">
+                          <Cell small value={m.label} onChange={(e) => updateMaterial(m.id, { label: e.target.value })} style={{ flex: 2.5 }} placeholder="品名" />
+                          <Cell small type="number" value={qty} onChange={(e) => updateMaterial(m.id, { qty: Number(e.target.value), unitPrice })} style={{ width: 55 }} placeholder="数量" />
+                          <span className="text-[11px]" style={{ color: C.inkSoft }}>×</span>
+                          <Cell small type="number" value={unitPrice} onChange={(e) => updateMaterial(m.id, { qty, unitPrice: Number(e.target.value) })} style={{ width: 80 }} placeholder="単価" />
+                          <span className="text-[11px] mono font-bold shrink-0" style={{ color: C.ink, minWidth: 70, textAlign: "right" }}>{fmtYen(materialItemAmount({ qty, unitPrice }))}</span>
+                          <IconButton onClick={() => removeMaterial(m.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                        </div>
+                      );
+                    })}
+                    {materialItems.length === 0 && <p className="text-[11px]" style={{ color: C.inkSoft }}>材料費の内訳がありません。</p>}
+                  </div>
+                  <div className="text-right text-[11px] mt-1" style={{ color: C.inkSoft }}>
+                    材料費合計 <span className="mono font-bold" style={{ color: C.ink }}>{fmtYen(materialCost)}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 items-end flex-wrap mb-2">
+                  <Field label="作業者">
+                    <select
+                      value={li.laborRateId}
+                      onChange={(e) => onChange({ ...li, laborRateId: e.target.value })}
+                      className="rounded-md px-2 py-1.5 text-sm outline-none"
+                      style={{ ...inputStyle, minWidth: 130 }}
+                    >
+                      <option value="">未選択</option>
+                      {laborRates.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}（¥{r.hourlyRate.toLocaleString()}/h）</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="作業時間（h）"><Cell type="number" value={li.laborHours} onChange={(e) => onChange({ ...li, laborHours: Number(e.target.value) })} style={{ width: 80 }} /></Field>
+                  <StatBox label="人件費（自動）" value={fmtYen(laborCost)} />
+                  <Field label="その他（外注費など）"><Cell type="number" value={li.otherCost} onChange={(e) => onChange({ ...li, otherCost: Number(e.target.value) })} style={{ width: 110 }} /></Field>
+                </div>
+
+                <div className="mb-2 pt-2" style={{ borderTop: `1px dashed ${C.border}` }}>
+                  <span className="text-xs font-bold" style={{ color: C.inkSoft }}>持参工具（特殊工具のみ）</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1 mb-1.5">
+                    {tools.map((t) => (
+                      <span key={t.id} className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: C.surface, color: C.ink, border: `1px solid ${C.border}` }}>
+                        {t.name}
+                        <button onClick={() => removeTool(t.id)} style={{ color: C.inkSoft }}>×</button>
+                      </span>
+                    ))}
+                    {tools.length === 0 && <span className="text-[11px]" style={{ color: C.inkSoft }}>登録なし</span>}
+                  </div>
+                  <div className="flex gap-1.5 items-center">
+                    <Cell small value={toolInput} onChange={(e) => setToolInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTool(); } }} style={{ flex: 1 }} placeholder="工具名を入力してEnter" />
+                    <button onClick={addTool} className="text-xs font-bold px-2 py-1.5 rounded-md shrink-0" style={{ background: C.surface, color: C.inkSoft, border: `1px solid ${C.border}` }}>追加</button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap pt-2" style={{ borderTop: `1px dashed ${C.border}` }}>
+                  <span className="text-xs" style={{ color: C.inkSoft }}>想定原価合計 <b className="mono" style={{ color: C.ink }}>{fmtYen(cost)}</b></span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs" style={{ color: C.inkSoft }}>利益率</span>
+                    <Cell small type="number" value={li.marginPercent} onChange={(e) => onChange({ ...li, marginPercent: Number(e.target.value) })} style={{ width: 55 }} />
+                    <span className="text-xs" style={{ color: C.inkSoft }}>%</span>
+                  </div>
+                  <span className="text-sm font-bold ml-auto text-right" style={{ color: C.safe }}>
+                    → 見積金額 {fmtYen(price)}
+                    {li.qty > 1 && <span className="block text-[10px] font-normal" style={{ color: C.inkSoft }}>@{fmtYen(unitPrice)}/{li.unit}</span>}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function LineItemTable({ items, onChange, laborRates, materials }) {
+      const [expandedIds, setExpandedIds] = useState(() => new Set());
+      const triggerUndo = useUndoTrigger();
+      const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+      const add = () => {
+        const newId = uid();
+        onChange([
+          ...items,
+          { id: newId, name: "新規項目", qty: 1, unit: "式", materialItems: [], laborRateId: laborRates[0]?.id || "", laborHours: 0, otherCost: 0, marginPercent: 50, ordered: false, tools: [] },
+        ]);
+        setExpandedIds((s) => new Set([...s, newId]));
+      };
+      const remove = (id) => {
+        const idx = items.findIndex((it) => it.id === id);
+        const item = items[idx];
+        if (!item) return;
+        const remaining = items.filter((it) => it.id !== id);
+        onChange(remaining);
+        triggerUndo(`「${item.name}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange(restored);
+        });
+      };
+      const toggle = (id) => setExpandedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+      const totalCost = sum(items, (li) => lineItemCost(li, laborRates));
+      const totalPrice = sum(items, (li) => lineItemPrice(li, laborRates));
+
+      return (
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1 flex-wrap gap-1">
+            <span className="text-xs font-bold" style={{ color: C.ink }}>工事項目（原価と利益率から自動計算）</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setExpandedIds(new Set(items.map((it) => it.id)))} className="text-xs" style={{ color: C.inkSoft }}>全展開</button>
+              <button onClick={() => setExpandedIds(new Set())} className="text-xs" style={{ color: C.inkSoft }}>全折畳</button>
+              <button onClick={add} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 項目追加</button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {items.map((li) => (
+              <LineItemCard key={li.id} li={li} laborRates={laborRates} materials={materials} onChange={(v) => update(li.id, v)} onRemove={() => remove(li.id)} open={expandedIds.has(li.id)} onToggle={() => toggle(li.id)} />
+            ))}
+            {items.length === 0 && <p className="text-[11px]" style={{ color: C.inkSoft }}>項目がありません。「項目追加」から作成してください。</p>}
+          </div>
+          <div className="flex justify-end gap-4 text-xs mt-2" style={{ color: C.inkSoft }}>
+            <span>想定原価合計 <b className="mono" style={{ color: C.ink }}>{fmtYen(totalCost)}</b></span>
+            <span>見積金額合計 <b className="mono" style={{ color: C.ink }}>{fmtYen(totalPrice)}</b></span>
+          </div>
+        </div>
+      );
+    }
+
+    function CostTable({ title, items, onChange, accent, paymentMethods, lineItems }) {
+      const triggerUndo = useUndoTrigger();
+      const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+      const add = () => onChange([...items, { id: uid(), type: "材料費", label: "", amount: 0, date: TODAY, source: "", paymentMethodId: "", lineItemId: "" }]);
+      const remove = (id) => {
+        const idx = items.findIndex((it) => it.id === id);
+        const item = items[idx];
+        if (!item) return;
+        const remaining = items.filter((it) => it.id !== id);
+        onChange(remaining);
+        triggerUndo(`「${item.label || item.type}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange(restored);
+        });
+      };
+      const total = sum(items, costItemAmount);
+
+      return (
+        <div className="mb-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-bold" style={{ color: accent }}>{title}</span>
+            <button onClick={add} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 追加</button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {items.map((c) => {
+              const qty = c.qty ?? 1;
+              const unit = c.unit ?? "式";
+              const unitPrice = c.unitPrice ?? c.amount ?? 0;
+              const subtotal = costItemAmount({ qty, unitPrice, amount: c.amount });
+              const setQtyPrice = (patch) => {
+                const nextQty = patch.qty ?? qty;
+                const nextUnitPrice = patch.unitPrice ?? unitPrice;
+                update(c.id, { ...patch, qty: nextQty, unitPrice: nextUnitPrice, amount: nextQty * nextUnitPrice });
+              };
+              return (
+                <div key={c.id} className="flex flex-col gap-1 p-1.5 rounded-md" style={{ background: C.surfaceAlt }}>
+                  <div className="flex gap-1.5 items-center">
+                    <Cell small type="date" value={c.date} onChange={(e) => update(c.id, { date: e.target.value })} style={{ flex: 1.3, minWidth: 105 }} />
+                    <Select value={c.type} onChange={(e) => update(c.id, { type: e.target.value })} />
+                    <Cell small value={c.label} onChange={(e) => update(c.id, { label: e.target.value })} style={{ flex: 3 }} placeholder="内容" />
+                    <IconButton onClick={() => remove(c.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                  </div>
+                  <div className="flex gap-1.5 items-center pl-1">
+                    <Cell small type="number" value={qty} onChange={(e) => setQtyPrice({ qty: Number(e.target.value) })} style={{ width: 55 }} placeholder="数量" />
+                    <Cell small value={unit} onChange={(e) => update(c.id, { unit: e.target.value })} style={{ width: 50 }} placeholder="単位" />
+                    <span className="text-[11px]" style={{ color: C.inkSoft }}>×</span>
+                    <Cell small type="number" value={unitPrice} onChange={(e) => setQtyPrice({ unitPrice: Number(e.target.value) })} style={{ width: 90 }} placeholder="単価" />
+                    <span className="text-[11px] mono font-bold shrink-0 ml-auto" style={{ color: C.ink, minWidth: 80, textAlign: "right" }}>
+                      小計 {fmtYen(subtotal)}
+                    </span>
+                  </div>
+                  {lineItems && lineItems.length > 0 && (
+                    <select
+                      value={c.lineItemId || ""}
+                      onChange={(e) => update(c.id, { lineItemId: e.target.value })}
+                      className="rounded-md px-1.5 py-1 text-[11px] outline-none ml-1"
+                      style={{ ...inputStyle, maxWidth: 260 }}
+                    >
+                      <option value="">どの工事項目か未指定（カテゴリ全体）</option>
+                      {lineItems.map((li) => (
+                        <option key={li.id} value={li.id}>{li.name || "（項目名未入力）"}</option>
+                      ))}
+                    </select>
+                  )}
+                  {c.type === INTERNAL_LABOR_TYPE ? (
+                    <p className="text-[10px] pl-1" style={{ color: C.inkSoft }}>自社人件費は給与（固定費）で計上済みのため資金繰りには反映しません</p>
+                  ) : (
+                    <div className="flex gap-1.5 items-center pl-1 flex-wrap">
+                      <select value={c.source} onChange={(e) => update(c.id, { source: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={{ ...inputStyle, flex: 1.4 }}>
+                        <option value="">購入先</option>
+                        {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <select value={c.paymentMethodId} onChange={(e) => update(c.id, { paymentMethodId: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={{ ...inputStyle, flex: 1.6 }}>
+                        <option value="">決済手段（即時扱い）</option>
+                        {paymentMethods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      {(() => {
+                        const selectedMethod = paymentMethods.find((m) => m.id === c.paymentMethodId);
+                        if (!selectedMethod || selectedMethod.type !== "credit") return null;
+                        const instant = c.instantRepay ?? true;
+                        return (
+                          <button
+                            onClick={() => update(c.id, { instantRepay: !instant })}
+                            className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                            style={{ background: instant ? C.safeSoft : C.amberSoft, color: instant ? C.safe : C.amber }}
+                          >
+                            {instant ? "即日返済（現金扱い）" : `${selectedMethod.paymentDay || 26}日払いへ`}
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-right text-xs mt-1" style={{ color: C.inkSoft }}>
+            合計 <span className="mono font-bold" style={{ color: C.ink }}>{fmtYen(total)}</span>
+          </div>
+        </div>
+      );
+    }
+
+    function CategoryCard({ cat, onChange, onRemove, defaultOpen, paymentMethods, laborRates, materials }) {
+      const [open, setOpen] = useState(!!defaultOpen);
+      const stats = categoryStats(cat, laborRates);
+      const meta = statusMeta[stats.status];
+      const barPct = Math.min(stats.ratio * 100, 130);
+      const unorderedCount = (cat.lineItems || []).filter((li) => !li.ordered).length;
+      return (
+        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.border}`, background: C.surface }}>
+          <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 px-3 sm:px-4 py-3 text-left">
+            {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            <span className="font-bold text-sm sm:text-base flex-1 truncate" style={{ color: C.ink, fontFamily: "'Zen Kaku Gothic New', sans-serif" }}>{cat.name}</span>
+            {cat.isOverheadCategory && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.surfaceAlt, color: C.inkSoft }}>諸経費</span>}
+            {unorderedCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.amberSoft, color: C.amber }}>未発注 {unorderedCount}件</span>}
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
+            <span className="hidden sm:flex items-center gap-1 text-xs mono shrink-0" style={{ color: C.inkSoft }}>
+              利益率 {fmtPct(stats.actMargin)}
+              <MarginArrow est={stats.estMargin} act={stats.actMargin} />
+            </span>
+          </button>
+          <div className="px-3 sm:px-4 pb-2">
+            <div className="h-1.5 rounded-full w-full overflow-hidden" style={{ background: C.surfaceAlt }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(barPct, 100)}%`, background: meta.color }} />
+            </div>
+            <div className="flex justify-between text-[10px] mt-0.5" style={{ color: C.inkSoft }}>
+              <span>実績原価 {fmtYen(stats.actual)} / 想定 {fmtYen(stats.budget)}</span>
+              <span>見積 {fmtYen(stats.revenue)}</span>
+            </div>
+          </div>
+          {open && (
+            <div className="px-3 sm:px-4 pb-4" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="pt-3">
+                <div className="flex gap-2 items-center flex-wrap mb-3">
+                  <Field label="分類名" grow>
+                    <Cell value={cat.name} onChange={(e) => onChange({ ...cat, name: e.target.value })} style={{ maxWidth: 220, minWidth: 140, fontWeight: 700 }} />
+                  </Field>
+                  <button
+                    onClick={() => onChange({ ...cat, isOverheadCategory: !cat.isOverheadCategory })}
+                    className="text-xs font-bold px-2 py-1.5 rounded-md shrink-0"
+                    style={{ background: cat.isOverheadCategory ? C.safeSoft : C.surfaceAlt, color: cat.isOverheadCategory ? C.safe : C.inkSoft }}
+                  >
+                    {cat.isOverheadCategory ? "✓ 諸経費として扱う" : "諸経費として扱う"}
+                  </button>
+                </div>
+                <LineItemTable items={cat.lineItems || []} onChange={(v) => onChange({ ...cat, lineItems: v })} laborRates={laborRates} materials={materials} />
+                <CostTable title="実績原価（発注ログ）" items={cat.actualCosts || []} onChange={(v) => onChange({ ...cat, actualCosts: v })} accent={C.danger} paymentMethods={paymentMethods} lineItems={cat.lineItems} />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <StatBox label="見積金額" value={fmtYen(stats.revenue)} />
+                  <StatBox label="想定利益率" value={fmtPct(stats.estMargin)} />
+                  <StatBox label="実績利益率" value={fmtPct(stats.actMargin)} color={stats.actMargin < stats.estMargin ? C.danger : C.safe} />
+                  <StatBox label="原価差異（実績-想定）" value={fmtYen(stats.actual - stats.budget)} color={stats.actual - stats.budget > 0 ? C.danger : C.safe} />
+                </div>
+                <div className="flex justify-end mt-3">
+                  <button onClick={onRemove} className="text-xs flex items-center gap-1 px-2 py-1 rounded-md" style={{ color: C.danger, background: C.dangerSoft }}>
+                    <Trash2 size={12} /> この項目を削除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function PurchaseLogTable({ items, onChange, paymentMethods }) {
+      const triggerUndo = useUndoTrigger();
+      const update = (id, patch) => onChange(items.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+      const add = () => onChange([...items, { id: uid(), date: TODAY, label: "", amount: 0, source: "", paymentMethodId: "" }]);
+      const remove = (id) => {
+        const idx = items.findIndex((it) => it.id === id);
+        const item = items[idx];
+        if (!item) return;
+        const remaining = items.filter((it) => it.id !== id);
+        onChange(remaining);
+        triggerUndo(`「${item.label || "記録"}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange(restored);
+        });
+      };
+      const total = sum(items, (c) => c.amount);
+
+      return (
+        <div>
+          <div className="flex flex-col gap-1.5">
+            {items.map((c) => {
+              const selectedMethod = (paymentMethods || []).find((m) => m.id === c.paymentMethodId);
+              const instant = c.instantRepay ?? true;
+              return (
+                <div key={c.id} className="flex flex-col gap-1 p-1.5 rounded-md" style={{ background: C.surfaceAlt }}>
+                  <div className="flex gap-1.5 items-center">
+                    <Cell small type="date" value={c.date} onChange={(e) => update(c.id, { date: e.target.value })} style={{ flex: 1.3, minWidth: 105 }} />
+                    <Cell small value={c.label} onChange={(e) => update(c.id, { label: e.target.value })} style={{ flex: 3 }} placeholder="内容" />
+                    <Cell small type="number" value={c.amount} onChange={(e) => update(c.id, { amount: Number(e.target.value) })} style={{ flex: 1.4, minWidth: 80 }} placeholder="金額" />
+                    <IconButton onClick={() => remove(c.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                  </div>
+                  <div className="flex gap-1.5 items-center pl-1 flex-wrap">
+                    <select value={c.source} onChange={(e) => update(c.id, { source: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={{ ...inputStyle, flex: 1.4 }}>
+                      <option value="">購入先</option>
+                      {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select value={c.paymentMethodId} onChange={(e) => update(c.id, { paymentMethodId: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={{ ...inputStyle, flex: 1.6 }}>
+                      <option value="">決済手段（即時扱い）</option>
+                      {(paymentMethods || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                    {selectedMethod && selectedMethod.type === "credit" && (
+                      <button
+                        onClick={() => update(c.id, { instantRepay: !instant })}
+                        className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                        style={{ background: instant ? C.safeSoft : C.amberSoft, color: instant ? C.safe : C.amber }}
+                      >
+                        {instant ? "即日返済（現金扱い）" : `${selectedMethod.paymentDay || 26}日払いへ`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {items.length === 0 && <p className="text-[11px]" style={{ color: C.inkSoft }}>まだ記録がありません。</p>}
+          </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <button onClick={add} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 追加</button>
+            <span className="text-xs" style={{ color: C.inkSoft }}>合計 <span className="mono font-bold" style={{ color: C.ink }}>{fmtYen(total)}</span></span>
+          </div>
+        </div>
+      );
+    }
+
+    function SuppliesToolsCard({ project, updateProject, paymentMethods, laborRates }) {
+      const suppliesTotal = sum(project.suppliesLog || [], (c) => c.amount);
+      const toolsTotal = sum(project.toolsLog || [], (c) => c.amount);
+      const overhead = overheadTotal(project, laborRates);
+      const mode = project.suppliesBudgetMode || "manual";
+      const suppliesBudget = effectiveSuppliesBudget(project, laborRates);
+      const suppliesDiff = suppliesTotal - suppliesBudget;
+
+      return (
+        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.border}`, background: C.surface }}>
+          <div className="px-3 sm:px-4 py-3">
+            <span className="font-bold text-sm sm:text-base" style={{ color: C.ink, fontFamily: "'Zen Kaku Gothic New', sans-serif" }}>消耗品・工具</span>
+            <p className="text-[11px] mt-0.5" style={{ color: C.inkSoft }}>刷毛・ビス・養生材などの消耗品や工具を案件単位でまとめて把握します</p>
+          </div>
+          <div className="px-3 sm:px-4 pb-4 flex flex-col gap-4" style={{ borderTop: `1px dashed ${C.border}` }}>
+            <div className="pt-3">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <span className="text-xs font-bold" style={{ color: C.inkSoft }}>消耗品ログ</span>
+                <div className="flex items-center gap-1 p-0.5 rounded-md" style={{ background: C.surfaceAlt }}>
+                  <button onClick={() => updateProject({ suppliesBudgetMode: "percent" })} className="text-[11px] font-bold px-2 py-1 rounded" style={{ background: mode === "percent" ? C.ink : "transparent", color: mode === "percent" ? C.surface : C.inkSoft }}>諸経費%自動</button>
+                  <button onClick={() => updateProject({ suppliesBudgetMode: "manual" })} className="text-[11px] font-bold px-2 py-1 rounded" style={{ background: mode === "manual" ? C.ink : "transparent", color: mode === "manual" ? C.surface : C.inkSoft }}>手入力</button>
+                </div>
+              </div>
+              {mode === "percent" ? (
+                <div className="flex items-center gap-2 flex-wrap mb-2 text-xs" style={{ color: C.inkSoft }}>
+                  <span>諸経費合計 <b className="mono" style={{ color: C.ink }}>{fmtYen(overhead)}</b> ×</span>
+                  <Cell small type="number" value={project.suppliesBudgetPercent ?? 15} onChange={(e) => updateProject({ suppliesBudgetPercent: Number(e.target.value) })} style={{ width: 60 }} />
+                  <span>% = 想定 <b className="mono" style={{ color: C.ink }}>{fmtYen(suppliesBudget)}</b></span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[11px]" style={{ color: C.inkSoft }}>想定（手入力）</span>
+                  <Cell small type="number" value={project.suppliesBudgetManual || 0} onChange={(e) => updateProject({ suppliesBudgetManual: Number(e.target.value) })} style={{ width: 100 }} />
+                </div>
+              )}
+              <PurchaseLogTable items={project.suppliesLog || []} onChange={(v) => updateProject({ suppliesLog: v })} paymentMethods={paymentMethods} />
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <StatBox label="想定" value={fmtYen(suppliesBudget)} />
+                <StatBox label="実績" value={fmtYen(suppliesTotal)} color={suppliesDiff > 0 ? C.danger : C.safe} />
+                <StatBox label="差異" value={fmtYen(suppliesDiff)} color={suppliesDiff > 0 ? C.danger : C.safe} />
+              </div>
+            </div>
+
+            <div className="pt-3" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold" style={{ color: C.inkSoft }}>工具ログ（本体）</span>
+              </div>
+              <PurchaseLogTable items={project.toolsLog || []} onChange={(v) => updateProject({ toolsLog: v })} paymentMethods={paymentMethods} />
+              <div className="mt-2"><StatBox label="工具 実績合計" value={fmtYen(toolsTotal)} /></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ToolsListCard({ project }) {
+      const [copied, setCopied] = useState(false);
+      const groups = [];
+      (project.categories || []).forEach((cat) => {
+        (cat.lineItems || []).forEach((li) => {
+          const tools = li.tools || [];
+          if (tools.length > 0) groups.push({ itemName: li.name, tools: tools.map((t) => t.name) });
+        });
+      });
+      if (groups.length === 0) return null;
+      const text = [`【持参工具リスト】${project.name}`, ...groups.map((g) => `・${g.itemName}：${g.tools.join("、")}`)].join("\n");
+      const copy = async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {}
+      };
+      return (
+        <div className="rounded-xl p-4 sm:p-5" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold tracking-wide" style={{ color: C.ink, fontFamily: "'Zen Kaku Gothic New', sans-serif" }}>持参工具リスト</h2>
+              <p className="text-xs mt-0.5" style={{ color: C.inkSoft }}>出発前に社内LINEへコピペして忘れ物を防ぎます</p>
+            </div>
+            <button onClick={copy} className="text-xs font-bold px-3 py-1.5 rounded-md shrink-0" style={{ background: copied ? C.safeSoft : C.ink, color: copied ? C.safe : C.surface }}>
+              {copied ? "コピーしました" : "LINE用にコピー"}
+            </button>
+          </div>
+          <div className="rounded-lg p-3 text-xs whitespace-pre-wrap" style={{ background: C.surfaceAlt, color: C.ink }}>{text}</div>
+        </div>
+      );
+    }
+
+    function QuoteTab({ project, updateProject, paymentMethods, laborRates, materials }) {
+      const revenue = projectRevenue(project, laborRates);
+      const budget = projectBudget(project, laborRates);
+      const actual = projectActual(project);
+      const estMargin = revenue > 0 ? (revenue - budget) / revenue : 0;
+      const actMargin = revenue > 0 ? (revenue - actual) / revenue : 0;
+      const cats = (project.categories || []).map((cat) => categoryStats(cat, laborRates));
+      const dangerCount = cats.filter((s) => s.status === "danger").length;
+      const amberCount = cats.filter((s) => s.status === "amber").length;
+      const triggerUndo = useUndoTrigger();
+
+      const updateCategory = (catId, newCat) => updateProject({ categories: project.categories.map((c) => (c.id === catId ? newCat : c)) });
+      const removeCategory = (catId) => {
+        const idx = project.categories.findIndex((c) => c.id === catId);
+        const item = project.categories[idx];
+        if (!item) return;
+        const remaining = project.categories.filter((c) => c.id !== catId);
+        updateProject({ categories: remaining });
+        triggerUndo(`工事項目「${item.name}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          updateProject({ categories: restored });
+        });
+      };
+      const addCategory = () =>
+        updateProject({ categories: [...(project.categories || []), { id: uid(), name: "新規項目", isOverheadCategory: false, lineItems: [], actualCosts: [] }] });
+
+      return (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+            <HeroBox label="お客様見積合計" value={fmtYen(revenue)} />
+            <HeroBox label="想定原価合計" value={fmtYen(budget)} />
+            <HeroBox label="実績原価合計" value={fmtYen(actual)} color={actual > budget ? C.danger : C.safe} />
+            <HeroBox label="想定利益率 → 実績利益率" value={`${fmtPct(estMargin)} → ${fmtPct(actMargin)}`} color={actMargin < estMargin ? C.danger : C.safe} />
+            {(dangerCount > 0 || amberCount > 0) && (
+              <div className="col-span-2 sm:col-span-4 text-xs px-3 py-2 rounded-lg" style={{ background: C.amberSoft, color: C.amber }}>
+                {dangerCount > 0 && `赤字リスクの項目が${dangerCount}件あります。`}
+                {amberCount > 0 && ` 要注意の項目が${amberCount}件あります。`}
+              </div>
+            )}
+          </div>
+          <ToolsListCard project={project} />
+          <div className="flex flex-col gap-3">
+            {(project.categories || []).map((cat, i) => (
+              <CategoryCard key={cat.id} cat={cat} defaultOpen={i === 0 || cat.name.includes("照明")} onChange={(v) => updateCategory(cat.id, v)} onRemove={() => removeCategory(cat.id)} paymentMethods={paymentMethods} laborRates={laborRates} materials={materials} />
+            ))}
+          </div>
+          <button onClick={addCategory} className="flex items-center justify-center gap-1.5 text-sm font-bold py-2.5 rounded-xl" style={{ background: C.surfaceAlt, color: C.ink, border: `1px dashed ${C.border}` }}>
+            <Plus size={15} /> 工事項目（分類）を追加
+          </button>
+          <SuppliesToolsCard project={project} updateProject={updateProject} paymentMethods={paymentMethods} laborRates={laborRates} />
+        </div>
+      );
+    }
+
+    function PaymentRow({ p, onChange, onRemove }) {
+      return (
+        <div className="flex gap-1.5 items-center">
+          <Cell small type="date" value={p.date} onChange={(e) => onChange({ ...p, date: e.target.value })} style={{ flex: 1.3, minWidth: 110 }} />
+          <Cell small value={p.note} onChange={(e) => onChange({ ...p, note: e.target.value })} style={{ flex: 2.5 }} placeholder="メモ" />
+          <Cell small type="number" value={p.amount} onChange={(e) => onChange({ ...p, amount: Number(e.target.value) })} style={{ flex: 1.4, minWidth: 90 }} placeholder="金額" />
+          <IconButton onClick={onRemove} title="削除" danger><Trash2 size={13} /></IconButton>
+        </div>
+      );
+    }
+
+    function MilestoneCard({ m, totalQuote, onChange, onRemove }) {
+      const triggerUndo = useUndoTrigger();
+      const stats = milestoneStats(totalQuote, m);
+      const meta = milestoneStatusMeta[stats.status];
+      const updatePayment = (id, patch) => onChange({ ...m, payments: m.payments.map((p) => (p.id === id ? patch : p)) });
+      const addPayment = () => onChange({ ...m, payments: [...(m.payments || []), { id: uid(), date: TODAY, amount: 0, note: "" }] });
+      const removePayment = (id) => {
+        const idx = m.payments.findIndex((p) => p.id === id);
+        const item = m.payments[idx];
+        if (!item) return;
+        const remaining = m.payments.filter((p) => p.id !== id);
+        onChange({ ...m, payments: remaining });
+        triggerUndo(`入金記録「${item.note || fmtYen(item.amount)}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange({ ...m, payments: restored });
+        });
+      };
+      const barPct = stats.amount > 0 ? Math.min((stats.paid / stats.amount) * 100, 100) : 0;
+
+      return (
+        <div className="rounded-xl p-3 sm:p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <div className="flex gap-2 items-end flex-wrap mb-2">
+            <Field label="名称"><Cell value={m.label} onChange={(e) => onChange({ ...m, label: e.target.value })} style={{ maxWidth: 140, fontWeight: 700 }} /></Field>
+            <Field label="割合（%）"><Cell type="number" value={m.percent} onChange={(e) => onChange({ ...m, percent: Number(e.target.value) })} style={{ maxWidth: 90 }} /></Field>
+            <Field label="支払期日"><Cell type="date" value={m.dueDate} onChange={(e) => onChange({ ...m, dueDate: e.target.value })} style={{ maxWidth: 160 }} /></Field>
+            <span className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: meta.bg, color: meta.color }}>
+              {meta.label}{stats.overdue && "（期日超過）"}
+            </span>
+            <IconButton onClick={onRemove} title="削除" danger><Trash2 size={15} /></IconButton>
+          </div>
+          <div className="h-1.5 rounded-full w-full overflow-hidden mb-2" style={{ background: C.surfaceAlt }}>
+            <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: meta.color }} />
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <StatBox label="予定金額" value={fmtYen(stats.amount)} />
+            <StatBox label="入金済み" value={fmtYen(stats.paid)} color={C.safe} />
+            <StatBox label="残額" value={fmtYen(stats.remaining)} color={stats.remaining > 0 ? C.danger : C.safe} />
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-bold" style={{ color: C.inkSoft }}>入金履歴</span>
+            <button onClick={addPayment} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 入金を記録</button>
+          </div>
+          <div className="flex flex-col gap-1">
+            {(m.payments || []).map((p) => (
+              <PaymentRow key={p.id} p={p} onChange={(v) => updatePayment(p.id, v)} onRemove={() => removePayment(p.id)} />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function PaymentTab({ project, updateProject, laborRates }) {
+      const triggerUndo = useUndoTrigger();
+      const totalQuote = projectRevenue(project, laborRates);
+      const stats = (project.milestones || []).map((m) => milestoneStats(totalQuote, m));
+      const paidTotal = sum(stats, (s) => s.paid);
+      const remainingTotal = sum(stats, (s) => s.remaining);
+      const percentSum = sum(project.milestones || [], (m) => m.percent);
+
+      const updateMilestone = (id, v) => updateProject({ milestones: project.milestones.map((m) => (m.id === id ? v : m)) });
+      const removeMilestone = (id) => {
+        const idx = project.milestones.findIndex((m) => m.id === id);
+        const item = project.milestones[idx];
+        if (!item) return;
+        const remaining = project.milestones.filter((m) => m.id !== id);
+        updateProject({ milestones: remaining });
+        triggerUndo(`支払い区分「${item.label}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          updateProject({ milestones: restored });
+        });
+      };
+      const addMilestone = () =>
+        updateProject({ milestones: [...(project.milestones || []), { id: uid(), label: "追加入金", percent: 0, dueDate: TODAY, payments: [] }] });
+
+      return (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+            <HeroBox label="総工費（見積と連動）" value={fmtYen(totalQuote)} />
+            <HeroBox label="入金済み合計" value={fmtYen(paidTotal)} color={C.safe} />
+            <HeroBox label="未収合計" value={fmtYen(remainingTotal)} color={remainingTotal > 0 ? C.danger : C.safe} />
+            <HeroBox label="按分割合" value={`${percentSum}%`} sub={percentSum !== 100 ? "100%に調整してください" : "OK"} color={percentSum !== 100 ? C.amber : C.safe} />
+          </div>
+          <div className="flex flex-col gap-3">
+            {(project.milestones || []).map((m) => (
+              <MilestoneCard key={m.id} m={m} totalQuote={totalQuote} onChange={(v) => updateMilestone(m.id, v)} onRemove={() => removeMilestone(m.id)} />
+            ))}
+          </div>
+          <button onClick={addMilestone} className="flex items-center justify-center gap-1.5 text-sm font-bold py-2.5 rounded-xl" style={{ background: C.surfaceAlt, color: C.ink, border: `1px dashed ${C.border}` }}>
+            <Plus size={15} /> 支払い区分を追加
+          </button>
+        </div>
+      );
+    }
+
+    function FixedCostRow({ f, onChange, onRemove }) {
+      const triggerUndo = useUndoTrigger();
+      const [open, setOpen] = useState(false);
+      const payments = f.payments || [];
+      const paidThisMonth = payments.some((p) => p.date && p.date.slice(0, 7) === TODAY.slice(0, 7));
+      const active = f.active !== false;
+
+      const addPayment = () => onChange({ ...f, payments: [...payments, { id: uid(), date: TODAY, amount: f.amount, note: "" }] });
+      const updatePayment = (id, patch) => onChange({ ...f, payments: payments.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+      const removePayment = (id) => {
+        const idx = payments.findIndex((p) => p.id === id);
+        const item = payments[idx];
+        if (!item) return;
+        const remaining = payments.filter((p) => p.id !== id);
+        onChange({ ...f, payments: remaining });
+        triggerUndo(`支払い履歴「${fmtShort(item.date)}」を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          onChange({ ...f, payments: restored });
+        });
+      };
+
+      return (
+        <div className="rounded-lg p-2" style={{ background: C.surfaceAlt, opacity: !active ? 0.5 : paidThisMonth ? 0.65 : 1 }}>
+          <div className="flex gap-2 items-end flex-wrap">
+            <button onClick={() => onChange({ ...f, active: !active })} className="flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-full shrink-0" style={{ background: active ? C.safeSoft : C.dangerSoft, color: active ? C.safe : C.danger }}>
+              {active ? <Power size={12} /> : <PowerOff size={12} />} {active ? "計上中" : "対象外"}
+            </button>
+            <Field label="項目名" grow><Cell value={f.name} onChange={(e) => onChange({ ...f, name: e.target.value })} style={{ minWidth: 160 }} /></Field>
+            <Field label="金額（円）"><Cell type="number" value={f.amount} onChange={(e) => onChange({ ...f, amount: Number(e.target.value) })} /></Field>
+            <Field label="支払日">
+              <div className="flex items-center gap-1">
+                <Cell type="number" min={0} max={31} value={f.day} onChange={(e) => onChange({ ...f, day: Number(e.target.value) })} style={{ width: 70 }} />
+                <button onClick={() => onChange({ ...f, day: 0 })} className="text-[11px] font-bold px-2 py-1.5 rounded-md shrink-0" style={{ background: Number(f.day) === 0 ? C.ink : C.surfaceAlt, color: Number(f.day) === 0 ? C.surface : C.inkSoft }}>末日</button>
+              </div>
+            </Field>
+            <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-bold px-2 py-1.5 rounded-md shrink-0" style={{ background: C.surface, color: C.inkSoft, border: `1px solid ${C.border}` }}>
+              消込 {payments.length > 0 && `(${payments.length})`}
+            </button>
+            <IconButton onClick={onRemove} title="削除" danger><Trash2 size={16} /></IconButton>
+          </div>
+          {open && (
+            <div className="mt-2 pt-2" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="text-xs font-bold shrink-0" style={{ color: C.inkSoft }}>今月だけ延期</span>
+                <Cell type="date" value={f.overrideDate || ""} onChange={(e) => onChange({ ...f, overrideDate: e.target.value })} style={{ width: 150 }} small />
+                {f.overrideDate && <button onClick={() => onChange({ ...f, overrideDate: "" })} className="text-[11px] font-bold px-2 py-1 rounded-md" style={{ background: C.surface, color: C.inkSoft, border: `1px solid ${C.border}` }}>解除</button>}
+              </div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold" style={{ color: C.inkSoft }}>消込履歴</span>
+                <button onClick={addPayment} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 今月の支払いを記録</button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {payments.map((p) => (
+                  <div key={p.id} className="flex gap-1.5 items-center">
+                    <Cell small type="date" value={p.date} onChange={(e) => updatePayment(p.id, { date: e.target.value })} style={{ flex: 1.2, minWidth: 105 }} />
+                    <Cell small type="number" value={p.amount} onChange={(e) => updatePayment(p.id, { amount: Number(e.target.value) })} style={{ flex: 1, minWidth: 90 }} placeholder="実額" />
+                    <Cell small value={p.note} onChange={(e) => updatePayment(p.id, { note: e.target.value })} style={{ flex: 1.5 }} placeholder="メモ" />
+                    <IconButton onClick={() => removePayment(p.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const PERSONAL_LEDGER_CATEGORIES = ["食費", "娯楽費", "日用品", "交通費", "材料費（会社用）", "その他"];
+    function PersonalLedgerCard({ company, updateCompany }) {
+      const triggerUndo = useUndoTrigger();
+      const ledger = company.personalLedger || [];
+      const [open, setOpen] = useState(false);
+      const thisMonthKey = TODAY.slice(0, 7);
+
+      const add = () =>
+        updateCompany({ personalLedger: [...ledger, { id: uid(), date: TODAY, direction: "company_to_personal", category: "食費", amount: 0, note: "" }] });
+      const update = (id, patch) => updateCompany({ personalLedger: ledger.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
+      const remove = (id) => {
+        const idx = ledger.findIndex((l) => l.id === id);
+        const item = ledger[idx];
+        if (!item) return;
+        const remaining = ledger.filter((l) => l.id !== id);
+        updateCompany({ personalLedger: remaining });
+        triggerUndo(`精算記録を削除しました`, () => {
+          const restored = [...remaining];
+          restored.splice(Math.min(idx, restored.length), 0, item);
+          updateCompany({ personalLedger: restored });
+        });
+      };
+
+      const netBalance = sum(ledger.filter((l) => l.direction === "personal_to_company"), (l) => l.amount) - sum(ledger.filter((l) => l.direction === "company_to_personal"), (l) => l.amount);
+      const thisMonth = ledger.filter((l) => l.date && l.date.slice(0, 7) === thisMonthKey);
+      const categoryTotals = PERSONAL_LEDGER_CATEGORIES.map((cat) => ({
+        category: cat,
+        total: sum(thisMonth.filter((l) => l.category === cat), (l) => l.amount),
+      })).filter((c) => c.total > 0);
+
+      return (
+        <SectionCard title="個人⇄会社 精算" subtitle="「何のために払ったか」を記録して精算残高と月間合計を可視化" right={<IconButton onClick={add} title="追加"><Plus size={16} /></IconButton>}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+            <StatBox label={netBalance >= 0 ? "会社→あき（返済要）" : "あき→会社（返済要）"} value={fmtYen(Math.abs(netBalance))} color={netBalance === 0 ? C.inkSoft : netBalance > 0 ? C.danger : C.safe} />
+            <div className="rounded-lg px-2.5 py-2" style={{ background: C.surfaceAlt }}>
+              <div className="text-[10px] mb-1" style={{ color: C.inkSoft }}>今月のカテゴリ別合計（{thisMonthKey}）</div>
+              {categoryTotals.map((c) => (
+                <div key={c.category} className="flex justify-between text-xs">
+                  <span style={{ color: C.inkSoft }}>{c.category}</span>
+                  <span className="mono font-bold" style={{ color: C.ink }}>{fmtYen(c.total)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => setOpen((o) => !o)} className="text-xs font-bold flex items-center gap-1" style={{ color: C.inkSoft }}>
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} 記録一覧（{ledger.length}件）
+          </button>
+          {open && (
+            <div className="flex flex-col gap-1.5 mt-2">
+              {ledger.map((l) => (
+                <div key={l.id} className="flex flex-col gap-1 p-1.5 rounded-md" style={{ background: C.surfaceAlt }}>
+                  <div className="flex gap-1.5 items-center flex-wrap">
+                    <Cell small type="date" value={l.date} onChange={(e) => update(l.id, { date: e.target.value })} style={{ flex: 1.2, minWidth: 105 }} />
+                    <select value={l.category} onChange={(e) => update(l.id, { category: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={inputStyle}>
+                      {PERSONAL_LEDGER_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <Cell small type="number" value={l.amount} onChange={(e) => update(l.id, { amount: Number(e.target.value) })} style={{ flex: 1, minWidth: 80 }} />
+                    <IconButton onClick={() => remove(l.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                  </div>
+                  <div className="flex gap-1.5 items-center flex-wrap pl-1">
+                    <button
+                      onClick={() => update(l.id, { direction: l.direction === "company_to_personal" ? "personal_to_company" : "company_to_personal" })}
+                      className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                      style={{ background: l.direction === "company_to_personal" ? C.dangerSoft : C.safeSoft, color: l.direction === "company_to_personal" ? C.danger : C.safe }}
+                    >
+                      {l.direction === "company_to_personal" ? "会社のお金→個人利用" : "個人のお金→会社用途"}
+                    </button>
+                    <Cell small value={l.note} onChange={(e) => update(l.id, { note: e.target.value })} style={{ flex: 1 }} placeholder="メモ" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      );
+    }
+
+    function CashflowTab({ company, updateCompany, projects, updateProjectById }) {
+      const { days, minPoint, firstShortfall } = useSimulation(company, projects);
+      const outstandingCard = outstandingCardTotal(projects, company.paymentMethods);
+      const triggerUndo = useUndoTrigger();
+
+      return (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+            <HeroBox label="現在の残高" value={`${fmtMan(company.initialBalance)}万円`} />
+            <HeroBox label={`${company.simulationDays}日以内の最低残高`} value={`${fmtMan(minPoint?.balance || 0)}万円`} sub={`${fmtShort(minPoint?.date)}時点`} color={minPoint?.balance < 0 ? C.danger : C.safe} />
+            <HeroBox label="資金ショート予兆" value={firstShortfall ? `${fmtShort(firstShortfall.date)}に発生` : "予定なし"} color={firstShortfall ? C.danger : C.safe} />
+            <HeroBox label="カード未引落合計" value={fmtYen(outstandingCard)} />
+          </div>
+
+          <div className="rounded-xl p-3 sm:p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+            <CashflowChart days={days} />
+          </div>
+
+          <PersonalLedgerCard company={company} updateCompany={updateCompany} />
+
+          <SectionCard title="全案件サマリー" subtitle="並行現場の原価消化と次回入金を一括確認">
+            <div className="flex flex-col gap-3">
+              {(projects || []).map((p) => {
+                const totalQuote = projectRevenue(p, company.laborRates);
+                const stats = projectStats(p, company.laborRates);
+                const meta = statusMeta[stats.status];
+                const barPct = Math.min(stats.ratio * 100, 130);
+                const nextMilestone = (p.milestones || []).map((m) => ({ m, s: milestoneStats(totalQuote, m) })).filter((x) => x.s.remaining > 0).sort((a, b) => (a.m.dueDate > b.m.dueDate ? 1 : -1))[0];
+                return (
+                  <div key={p.id} className="rounded-lg p-3" style={{ background: C.surfaceAlt, opacity: p.active ? 1 : 0.55 }}>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <button onClick={() => updateProjectById(p.id, { active: !p.active })} className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full shrink-0" style={{ background: p.active ? C.safeSoft : C.dangerSoft, color: p.active ? C.safe : C.danger }}>
+                        {p.active ? <Power size={12} /> : <PowerOff size={12} />} {p.active ? "反映中" : "対象外"}
+                      </button>
+                      <span className="text-sm font-bold" style={{ color: C.ink }}>{p.name}</span>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
+                      <span className="text-xs mono ml-auto shrink-0" style={{ color: C.inkSoft }}>利益率 {fmtPct(stats.estMargin)} → {fmtPct(stats.actMargin)}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full w-full overflow-hidden mb-1" style={{ background: C.surface }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(barPct, 100)}%`, background: meta.color }} />
+                    </div>
+                    <div className="flex justify-between flex-wrap gap-1 text-[11px]" style={{ color: C.inkSoft }}>
+                      <span>原価消化 {fmtPct(stats.ratio)}（{fmtYen(stats.actual)} / {fmtYen(stats.budget)}）</span>
+                      <span>{nextMilestone ? `次回入金：${nextMilestone.m.label} ${fmtYen(nextMilestone.s.remaining)}（${fmtShort(nextMilestone.m.dueDate)}）` : "入金予定なし"}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="固定費（毎月）" subtitle="給与・家賃など" right={<IconButton onClick={() => updateCompany({ fixedCosts: [...(company.fixedCosts || []), { id: uid(), name: "新規固定費", amount: 0, day: 25, active: true }] })} title="追加"><Plus size={16} /></IconButton>}>
+            <div className="flex flex-col gap-2">
+              {(company.fixedCosts || []).map((f) => (
+                <FixedCostRow key={f.id} f={f} onChange={(v) => updateCompany({ fixedCosts: company.fixedCosts.map(x => x.id === f.id ? v : x) })} onRemove={() => updateCompany({ fixedCosts: company.fixedCosts.filter(x => x.id !== f.id) })} />
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="個人借入・リスケ調整" subtitle="スライダーで返済日を先送りシミュレーション" right={<IconButton onClick={() => updateCompany({ loans: [...(company.loans || []), { id: uid(), person: "新規借入先", amount: 0, dueDate: TODAY, interestRate: 0, delayDays: 0, active: true }] })} title="追加"><Plus size={16} /></IconButton>}>
+            <div className="flex flex-col gap-3">
+              {(company.loans || []).map((loan) => {
+                const effectiveDate = addDays(loan.dueDate, Number(loan.delayDays) || 0);
+                return (
+                  <div key={loan.id} className="rounded-lg p-3" style={{ background: loan.active ? C.surfaceAlt : `${C.surfaceAlt}80`, border: `1px dashed ${C.border}`, opacity: loan.active ? 1 : 0.55 }}>
+                    <div className="flex gap-2 items-end flex-wrap mb-2">
+                      <button onClick={() => updateCompany({ loans: company.loans.map(l => l.id === loan.id ? { ...l, active: !l.active } : l) })} className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full shrink-0" style={{ background: loan.active ? C.safeSoft : C.dangerSoft, color: loan.active ? C.safe : C.danger }}>
+                        {loan.active ? <Power size={12} /> : <PowerOff size={12} />} {loan.active ? "計上中" : "対象外"}
+                      </button>
+                      <Field label="借入先" grow><Cell value={loan.person} onChange={(e) => updateCompany({ loans: company.loans.map(l => l.id === loan.id ? { ...l, person: e.target.value } : l) })} style={{ minWidth: 200 }} /></Field>
+                      <Field label="借入額（円）"><Cell type="number" value={loan.amount} onChange={(e) => updateCompany({ loans: company.loans.map(l => l.id === loan.id ? { ...l, amount: Number(e.target.value) } : l) })} style={{ width: 120 }} /></Field>
+                      <Field label="返済期日"><Cell type="date" value={loan.dueDate} onChange={(e) => updateCompany({ loans: company.loans.map(l => l.id === loan.id ? { ...l, dueDate: e.target.value } : l) })} style={{ width: 150 }} /></Field>
+                      <IconButton onClick={() => updateCompany({ loans: company.loans.filter(l => l.id !== loan.id) })} title="削除" danger><Trash2 size={16} /></IconButton>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs shrink-0" style={{ color: C.inkSoft }}>返済日：<b style={{ color: C.ink }}>{fmtShort(effectiveDate)}</b></span>
+                      <input type="range" min={0} max={60} value={loan.delayDays} onChange={(e) => updateCompany({ loans: company.loans.map(l => l.id === loan.id ? { ...l, delayDays: Number(e.target.value) } : l) })} className="flex-1" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    function AnalyticsTab({ projects, laborRates }) {
+      const agg = aggregateBenchmark(projects, laborRates);
+      const [buffer, setBuffer] = useState(2000000);
+
+      return (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+            <HeroBox label="消耗品：見積に対する平均" value={fmtPct(agg.suppliesPct)} sub={`${agg.projectCount}件のデータから算出`} />
+            <HeroBox label="工具：見積に対する平均" value={fmtPct(agg.toolsPct)} />
+            <HeroBox label="外部人件費（タイミー等）：平均" value={fmtPct(agg.laborPct)} />
+          </div>
+
+          <SectionCard title="次回見積のバッファ計算機" subtitle="見積合計を入力すると過去実績%から目安を出します">
+            <Field label="次回の見積合計（円）">
+              <Cell type="number" value={buffer} onChange={(e) => setBuffer(Number(e.target.value))} style={{ maxWidth: 200 }} />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+              <StatBox label="消耗品バッファ目安" value={fmtYen(buffer * agg.suppliesPct)} />
+              <StatBox label="工具バッファ目安" value={fmtYen(buffer * agg.toolsPct)} />
+              <StatBox label="外部人件費バッファ目安" value={fmtYen(buffer * agg.laborPct)} />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="工種別の精度（想定原価 vs 実績原価）" subtitle="工種単位の乖離率を積み上げて次回見積に活かします">
+            <div className="flex flex-col gap-2">
+              {tradeAccuracyStats(projects, laborRates).map((t) => {
+                const over = t.overrunPct > 0.05;
+                const under = t.overrunPct < -0.05;
+                const color = over ? C.danger : under ? C.safe : C.inkSoft;
+                return (
+                  <div key={t.name} className="flex items-center gap-3 flex-wrap rounded-lg p-2.5" style={{ background: C.surfaceAlt }}>
+                    <span className="text-sm font-bold" style={{ color: C.ink, minWidth: 110 }}>{t.name}</span>
+                    <span className="text-[11px]" style={{ color: C.inkSoft }}>{t.count}件</span>
+                    <span className="text-[11px]" style={{ color: C.inkSoft }}>想定 {fmtYen(t.totalBudget)} / 実績 {fmtYen(t.totalActual)}</span>
+                    <span className="text-xs font-bold ml-auto" style={{ color }}>
+                      {t.overrunPct >= 0 ? "+" : ""}{fmtPct(t.overrunPct)}
+                      {over && "（超過傾向）"}
+                      {under && "（余裕あり）"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    const WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+
+    function CalendarTab({ company, updateCompany, projects }) {
+      const [viewDate, setViewDate] = useState(() => new Date());
+      const year = viewDate.getFullYear();
+      const month = viewDate.getMonth();
+      const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+      const dateStr = (d) => fmtDateLocal(new Date(year, month, d));
+
+      const eventsByDate = useMemo(() => {
+        const map = {};
+        const push = (date, ev) => {
+          if (!date || date.slice(0, 7) !== monthKey) return;
+          (map[date] = map[date] || []).push(ev);
+        };
+
+        (company.fixedCosts || []).filter((fc) => fc.active !== false).forEach((fc) => {
+          if (fc.overrideDate && fc.overrideDate.slice(0, 7) === monthKey) {
+            push(fc.overrideDate, { label: `${fc.name}（延期）`, color: C.danger });
+          } else if (Number(fc.day) === 0) {
+            push(dateStr(daysInMonth), { label: fc.name, color: C.danger });
+          } else if (fc.day >= 1 && fc.day <= daysInMonth) {
+            push(dateStr(fc.day), { label: fc.name, color: C.danger });
+          }
+        });
+        (company.loans || []).filter((l) => l.active).forEach((l) => push(addDays(l.dueDate, Number(l.delayDays) || 0), { label: `${l.person} 返済`, color: C.danger }));
+
+        (projects || []).forEach((p) => {
+          const totalQuote = projectRevenue(p, company.laborRates);
+          (p.milestones || []).forEach((m) => {
+            const ms = milestoneStats(totalQuote, m);
+            if (ms.remaining > 0) push(m.dueDate, { label: `${p.name}｜${m.label} 入金`, color: C.safe });
+          });
+          if (p.startDate) push(p.startDate, { label: `${p.name}｜着工`, color: C.inkSoft });
+          if (p.expectedEndDate) push(p.expectedEndDate, { label: `${p.name}｜完了予定`, color: C.inkSoft });
+        });
+
+        (company.scheduleEvents || []).forEach((ev) => {
+          const proj = (projects || []).find((p) => p.id === ev.projectId);
+          const idx = proj ? projects.indexOf(proj) % PROJECT_COLORS.length : 0;
+          const color = ev.type === "meeting" ? C.amber : PROJECT_COLORS[idx];
+          const label = ev.type === "meeting" ? `${ev.time ? ev.time + " " : ""}${ev.title || "打ち合わせ"}` : `${EVENT_TYPE_LABEL[ev.type]}${proj ? "：" + proj.name : ""}${ev.title ? " " + ev.title : ""}`;
+          push(ev.date, { label, color, evId: ev.id });
+        });
+
+        return map;
+      }, [company, projects, monthKey, daysInMonth]);
+
+      const cells = [];
+      for (let i = 0; i < firstWeekday; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+      const [form, setForm] = useState({ date: TODAY, type: "workday", projectId: projects[0]?.id || "", time: "", title: "" });
+      const addEvent = () => {
+        if (!form.date) return;
+        updateCompany({ scheduleEvents: [...(company.scheduleEvents || []), { id: uid(), ...form }] });
+      };
+
+      return (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <IconButton onClick={() => setViewDate(new Date(year, month - 1, 1))} title="前月"><ChevronLeft size={16} /></IconButton>
+            <span className="text-base font-bold" style={{ color: C.ink, fontFamily: "'Zen Kaku Gothic New', sans-serif" }}>{year}年{month + 1}月</span>
+            <IconButton onClick={() => setViewDate(new Date(year, month + 1, 1))} title="翌月"><ChevronRight size={16} /></IconButton>
+          </div>
+
+          <div className="rounded-xl p-3 sm:p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {WEEKDAY_LABELS.map((w) => <div key={w} className="text-center text-[11px]" style={{ color: C.inkSoft }}>{w}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {cells.map((d, i) => {
+                if (d === null) return <div key={i} />;
+                const ds = dateStr(d);
+                const isToday = ds === TODAY;
+                const dayEvents = eventsByDate[ds] || [];
+                return (
+                  <div key={i} className="rounded-md p-1 flex flex-col gap-0.5" style={{ minHeight: 64, background: C.surfaceAlt, border: isToday ? `2px solid ${C.amber}` : `1px solid ${C.border}` }}>
+                    <span className="text-[11px]" style={{ color: isToday ? C.amber : C.inkSoft, fontWeight: isToday ? 700 : 400 }}>{d}</span>
+                    {dayEvents.slice(0, 3).map((ev, j) => (
+                      <span key={j} className="text-[9px] rounded px-1 truncate" style={{ background: `${ev.color}22`, color: ev.color }}>{ev.label}</span>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <SectionCard title="予定を追加" subtitle="作業日・打ち合わせ・出張の登録">
+            <div className="flex gap-2 items-end flex-wrap">
+              <Field label="日付"><Cell type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ maxWidth: 160 }} /></Field>
+              <Field label="種別">
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="rounded-md px-2 py-1.5 text-sm outline-none" style={inputStyle}>
+                  {Object.entries(EVENT_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </Field>
+              <Field label="メモ" grow><Cell value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ minWidth: 160 }} placeholder="内容" /></Field>
+              <button onClick={addEvent} className="flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-md shrink-0" style={{ background: C.ink, color: C.surface }}><Plus size={13} /> 追加</button>
+            </div>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    function MaterialMasterRow({ m, onChange, onRemove }) {
+      const triggerUndo = useUndoTrigger();
+      const [open, setOpen] = useState(false);
+      const priceLog = m.priceLog || [];
+      const sortedLog = [...priceLog].sort((a, b) => (a.date > b.date ? -1 : 1));
+      const lastLog = sortedLog[0];
+      const prevLog = sortedLog[1];
+
+      const addLog = () => onChange({ ...m, priceLog: [...priceLog, { id: uid(), date: TODAY, price: m.unitPrice || 0, source: "コーナン", note: "" }] });
+      const updateLog = (id, patch) => onChange({ ...m, priceLog: priceLog.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
+      const removeLog = (id) => onChange({ ...m, priceLog: priceLog.filter((l) => l.id !== id) });
+
+      return (
+        <div className="rounded-lg p-2.5" style={{ background: C.surfaceAlt }}>
+          <div className="flex gap-2 items-end flex-wrap">
+            <Field label="品名" grow><Cell value={m.name} onChange={(e) => onChange({ ...m, name: e.target.value })} style={{ minWidth: 160, fontWeight: 700 }} /></Field>
+            <Field label="単位"><Cell value={m.unit} onChange={(e) => onChange({ ...m, unit: e.target.value })} style={{ width: 60 }} /></Field>
+            <Field label="現在の単価（円）"><Cell type="number" value={m.unitPrice} onChange={(e) => onChange({ ...m, unitPrice: Number(e.target.value) })} style={{ width: 100 }} /></Field>
+            <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-bold px-2 py-1.5 rounded-md shrink-0" style={{ background: C.surface, color: C.inkSoft, border: `1px solid ${C.border}` }}>
+              購入履歴 {priceLog.length > 0 && `(${priceLog.length})`}
+            </button>
+            <IconButton onClick={onRemove} title="削除" danger><Trash2 size={16} /></IconButton>
+          </div>
+
+          {!open && lastLog && (
+            <div className="text-[11px] mt-2 flex items-center gap-2 flex-wrap" style={{ color: C.inkSoft }}>
+              <span>直近の購入：{fmtShort(lastLog.date)}・{fmtYen(lastLog.price)}{lastLog.source && `（${lastLog.source}）`}</span>
+              {prevLog && (
+                (() => {
+                  const diff = lastLog.price - prevLog.price;
+                  if (diff > 0) return <span className="font-bold px-1.5 py-0.5 rounded" style={{ background: C.dangerSoft, color: C.danger }}>↑ {diff.toLocaleString()}円 値上がり</span>;
+                  if (diff < 0) return <span className="font-bold px-1.5 py-0.5 rounded" style={{ background: C.safeSoft, color: C.safe }}>↓ {Math.abs(diff).toLocaleString()}円 値下がり</span>;
+                  return <span style={{ color: C.inkSoft }}>→ 価格維持</span>;
+                })()
+              )}
+            </div>
+          )}
+
+          {open && (
+            <div className="mt-2 pt-2" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold" style={{ color: C.inkSoft }}>購入履歴（レシートから記録）</span>
+                <button onClick={addLog} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> 記録を追加</button>
+              </div>
+              <div className="flex flex-col gap-1">
+                {sortedLog.map((l) => (
+                  <div key={l.id} className="flex gap-1.5 items-center flex-wrap">
+                    <Cell small type="date" value={l.date} onChange={(e) => updateLog(l.id, { date: e.target.value })} style={{ flex: 1.2, minWidth: 105 }} />
+                    <Cell small type="number" value={l.price} onChange={(e) => updateLog(l.id, { price: Number(e.target.value) })} style={{ flex: 1, minWidth: 80 }} placeholder="単価" />
+                    <select value={l.source} onChange={(e) => updateLog(l.id, { source: e.target.value })} className="rounded-md px-1.5 py-1 text-[11px] outline-none" style={{ ...inputStyle, flex: 1.3, minWidth: 110 }}>
+                      <option value="">購入先</option>
+                      {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <button onClick={() => onChange({ ...m, unitPrice: l.price })} className="text-[10px] font-bold px-2 py-1.5 rounded-md shrink-0" style={{ background: m.unitPrice === l.price ? C.safeSoft : C.surface, color: m.unitPrice === l.price ? C.safe : C.inkSoft, border: `1px solid ${C.border}` }}>
+                      {m.unitPrice === l.price ? "✓ 単価に反映中" : "単価に反映"}
+                    </button>
+                    <IconButton onClick={() => removeLog(l.id)} title="削除" danger><Trash2 size={13} /></IconButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function PaymentMethodCard({ method, projects, onChange, onRemove }) {
+      const balance = method.type === "charge" ? chargeBalance(method, projects) : null;
+      const addTopUp = () => onChange({ ...method, topUps: [...(method.topUps || []), { id: uid(), date: TODAY, amount: 0, note: "" }] });
+      const updateTopUp = (id, patch) => onChange({ ...method, topUps: (method.topUps || []).map((t) => (t.id === id ? { ...t, ...patch } : t)) });
+      const removeTopUp = (id) => onChange({ ...method, topUps: (method.topUps || []).filter((t) => t.id !== id) });
+
+      return (
+        <div className="rounded-lg p-3" style={{ background: C.surfaceAlt, border: `1px dashed ${C.border}` }}>
+          <div className="flex gap-2 items-end flex-wrap mb-2">
+            <Field label="名称" grow><Cell value={method.name} onChange={(e) => onChange({ ...method, name: e.target.value })} style={{ maxWidth: 200, minWidth: 140, fontWeight: 700 }} /></Field>
+            <Field label="種別">
+              <select value={method.type} onChange={(e) => onChange({ ...method, type: e.target.value })} className="rounded-md px-2 py-1.5 text-sm outline-none" style={inputStyle}>
+                {Object.entries(METHOD_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            {method.type === "credit" && (
+              <>
+                <Field label="締め日"><Cell type="number" min={1} max={31} value={method.closingDay || 31} onChange={(e) => onChange({ ...method, closingDay: Number(e.target.value) })} style={{ maxWidth: 80 }} /></Field>
+                <Field label="支払日"><Cell type="number" min={1} max={31} value={method.paymentDay || 27} onChange={(e) => onChange({ ...method, paymentDay: Number(e.target.value) })} style={{ maxWidth: 80 }} /></Field>
+                <Field label="支払月"><Cell type="number" min={0} max={2} value={method.paymentMonthOffset ?? 1} onChange={(e) => onChange({ ...method, paymentMonthOffset: Number(e.target.value) })} style={{ maxWidth: 80 }} /></Field>
+                <Field label="枠"><Cell type="number" value={method.creditLimit || 0} onChange={(e) => onChange({ ...method, creditLimit: Number(e.target.value) })} style={{ maxWidth: 110 }} /></Field>
+              </>
+            )}
+            <IconButton onClick={onRemove} title="削除" danger><Trash2 size={16} /></IconButton>
+          </div>
+          {method.type === "charge" && (
+            <div className="mt-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold" style={{ color: C.inkSoft }}>チャージ残高：<b className="mono" style={{ color: balance < 0 ? C.danger : C.safe }}>{fmtYen(balance)}</b></span>
+                <button onClick={addTopUp} className="text-xs flex items-center gap-0.5" style={{ color: C.inkSoft }}><Plus size={12} /> チャージ追加</button>
+              </div>
+              <div className="flex flex-col gap-1 mb-1">
+                {(method.topUps || []).map((t) => (
+                  <div key={t.id} className="flex gap-1.5 items-center">
+                    <Cell small type="date" value={t.date} onChange={(e) => updateTopUp(t.id, { date: e.target.value })} style={{ flex: 1.3, minWidth: 105 }} />
+                    <Cell small value={t.note} onChange={(e) => updateTopUp(t.id, { note: e.target.value })} style={{ flex: 2 }} placeholder="メモ" />
+                    <Cell small type="number" value={t.amount} onChange={(e) => updateTopUp(t.id, { amount: Number(e.target.value) })} style={{ flex: 1.2, minWidth: 80 }} />
+                    <IconButton onClick={() => removeTopUp(t.id)} title="削除" danger><Trash2 size={12} /></IconButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function SettingsTab({ company, updateCompany, projects }) {
       const materials = company.materials || [];
       const updateMaterial = (id, patch) => updateCompany({ materials: materials.map((m) => (m.id === id ? patch : m)) });
@@ -1211,6 +2529,9 @@
       );
     }
 
+    // ----------------------------------------------------
+    // Tab Navigation & App Root
+    // ----------------------------------------------------
     const TABS = [
       { id: "quote", label: "見積・原価", icon: FileText },
       { id: "payment", label: "支払いスケジュール", icon: Receipt },
